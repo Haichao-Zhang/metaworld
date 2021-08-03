@@ -50,7 +50,7 @@ class MujocoEnv(gym.Env, abc.ABC):
         self._viewers = {}
 
         self.metadata = {
-            'render.modes': ['human'],
+            'render.modes': ['human', "rgb_array"],
             'video.frames_per_second': int(np.round(1.0 / self.dt))
         }
         self.init_qpos = self.sim.data.qpos.ravel().copy()
@@ -118,33 +118,61 @@ class MujocoEnv(gym.Env, abc.ABC):
                 warnings.warn(str(err), category=RuntimeWarning)
                 self._did_see_sim_exception = True
 
-    def render(self, offscreen=False, camera_name="corner2", resolution=(640, 480)):
-        assert_string = ("camera_name should be one of ",
-                "corner3, corner, corner2, topview, gripperPOV, behindGripper")
-        assert camera_name in {"corner3", "corner", "corner2", 
-            "topview", "gripperPOV", "behindGripper"}, assert_string
-        if not offscreen:
-            self._get_viewer('human').render()
-        else:
-            return self.sim.render(
-                *resolution,
-                mode='offscreen',
-                camera_name=camera_name
-            )
+    def render(
+        self,
+        mode="human",
+        width=DEFAULT_SIZE,
+        height=DEFAULT_SIZE,
+        camera_id=None,
+        camera_name=None,
+    ):
+        if mode == "rgb_array" or mode == "depth_array":
+            if camera_id is not None and camera_name is not None:
+                raise ValueError(
+                    "Both `camera_id` and `camera_name` cannot be"
+                    " specified at the same time."
+                )
+
+            no_camera_specified = camera_name is None and camera_id is None
+            if no_camera_specified:
+                camera_name = "track"
+
+            if camera_id is None and camera_name in self.model._camera_name2id:
+                camera_id = self.model.camera_name2id(camera_name)
+
+            self._get_viewer(mode).render(width, height, camera_id=camera_id)
+
+        if mode == "rgb_array":
+            # window size used for old mujoco-py:
+            data = self._get_viewer(mode).read_pixels(width, height, depth=False)
+            # original image is upside-down, so flip it
+            return data[::-1, :, :]
+        elif mode == "depth_array":
+            self._get_viewer(mode).render(width, height)
+            # window size used for old mujoco-py:
+            # Extract depth part of the read_pixels() tuple
+            data = self._get_viewer(mode).read_pixels(width, height, depth=True)[1]
+            # original image is upside-down, so flip it
+            return data[::-1, :]
+        elif mode == "human":
+            self._get_viewer(mode).render()
 
     def close(self):
         if self.viewer is not None:
             glfw.destroy_window(self.viewer.window)
             self.viewer = None
+            self._viewers = {}
 
     def _get_viewer(self, mode):
         self.viewer = self._viewers.get(mode)
         if self.viewer is None:
-            if mode == 'human':
+            if mode == "human":
                 self.viewer = mujoco_py.MjViewer(self.sim)
+            elif mode == "rgb_array" or mode == "depth_array":
+                self.viewer = mujoco_py.MjRenderContextOffscreen(self.sim, -1)
+
             self.viewer_setup()
             self._viewers[mode] = self.viewer
-        self.viewer_setup()
         return self.viewer
 
     def get_body_com(self, body_name):
