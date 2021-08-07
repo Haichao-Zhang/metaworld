@@ -124,7 +124,7 @@ class MujocoEnv(gym.Env, abc.ABC):
         width=480,
         height=480,
         camera_id=None,
-        camera_name="debug2"
+        camera_name="topview"
     ):
         # if mode == "rgb_array" or mode == "depth_array":
         #     if camera_id is not None and camera_name is not None:

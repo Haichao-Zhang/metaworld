@@ -213,6 +213,7 @@ def get_2D_from_3D(a, c, theta, fov, e):
 
 
 
+
 class SawyerMocapBase(MujocoEnv, metaclass=abc.ABCMeta):
     """
     Provides some commonly-shared functions for Sawyer Mujoco envs that use
@@ -395,30 +396,7 @@ class SawyerXYZEnv(SawyerMocapBase, metaclass=abc.ABCMeta):
 
 
 
-def project_point(self, point, img_height=480, img_width=640, camera_name=""):
-        model_matrix = np.zeros((4, 4))
-        model_matrix[:3, :3] = self.sim.data.get_camera_xmat(camera_name).T
-        model_matrix[-1, -1] = 1
 
-        fovy_radians = np.deg2rad(self.sim.model.cam_fovy[self.sim.model.camera_name2id(camera_name)])
-        uh = 1. / np.tan(fovy_radians / 2)
-        uw = uh / (img_width / img_height)
-        extent = self.sim.model.stat.extent
-        far, near = self.sim.model.vis.map.zfar * extent, self.sim.model.vis.map.znear * extent
-        view_matrix = np.array([[uw, 0., 0., 0.],                        # matrix definition from
-                                [0., uh, 0., 0.],                        # https://stackoverflow.com/questions/18404890/how-to-build-perspective-projection-matrix-no-api
-                                [0., 0., far / (far - near), -1.],
-                                [0., 0., -2*far*near/(far - near), 0.]]) # Note Mujoco doubles this quantity
-
-        MVP_matrix = view_matrix.dot(model_matrix)
-        world_coord = np.ones((4, 1))
-        world_coord[:3, 0] = point - self.sim.data.get_camera_xpos(camera_name)
-
-        clip = MVP_matrix.dot(world_coord)
-        ndc = clip[:3] / clip[3]  # everything should now be in -1 to 1!!
-        col, row = (ndc[0] + 1) * self._frame_width / 2, (-ndc[1] + 1) * img_height / 2
-
-        return self._frame_height - row, col                 # rendering flipped around in height
 
     def project_point_world_to_ego(self, fov=60, img_height=480, img_width=640, camera_name=""):
         """Project 3d points from world coordinate into camera view coordinate
@@ -442,8 +420,8 @@ def project_point(self, point, img_height=480, img_width=640, camera_name=""):
         # traj = [np.array([-1., 0., 0.]), np.array([0., 0., 0.]), np.array([1., 0., 0.])]
         # traj = [self._get_pos_goal()]
         # # traj = [np.array([0.00776335, 0.84191945, 0.22130488])]
-        traj = [np.array([1, 2, 3])]
-        traj = [np.array([0.2, 0.25, 1.])]
+        # traj = [np.array([1, 2, 3])]
+        # traj = [np.array([0.2, 0.25, 1.])]
         # traj = [obj_pos]
 
         # print(traj)
@@ -452,11 +430,43 @@ def project_point(self, point, img_height=480, img_width=640, camera_name=""):
         cam_2d_traj = []
         for pt in traj:
             cam_2d = global2cam(pt, cam_pos, cam_ori, img_width, img_height, fov=fov)
-            cam_2d_traj.append(cam_2d)
 
-        print(cam_2d_traj)
+            pt2d = self.project_point(pt, img_height=img_height, img_width=img_width, camera_name=camera_name)
+
+            print(pt2d)
+            cam_2d_traj.append(pt2d)
         return cam_2d_traj
 
+
+
+
+    def project_point(self, point, img_height=480, img_width=640, camera_name=""):
+            model_matrix = np.zeros((4, 4))
+            model_matrix[:3, :3] = self.sim.data.get_camera_xmat(camera_name).T
+            model_matrix[-1, -1] = 1
+
+            fovy_radians = np.deg2rad(self.sim.model.cam_fovy[self.sim.model.camera_name2id(camera_name)])
+            # uh = 1. / np.tan(fovy_radians / 2)
+            uh = 1. / (np.tan(fovy_radians) * 2)
+            uw = uh / (img_width / img_height)
+            extent = self.sim.model.stat.extent
+            far, near = self.sim.model.vis.map.zfar * extent, self.sim.model.vis.map.znear * extent
+            view_matrix = np.array([[uw, 0., 0., 0.],                        # matrix definition from
+                                    [0., uh, 0., 0.],                        # https://stackoverflow.com/questions/18404890/how-to-build-perspective-projection-matrix-no-api
+                                    [0., 0., far / (far - near), -1.],
+                                    [0., 0., -2*far*near/(far - near), 0.]]) # Note Mujoco doubles this quantity
+
+            MVP_matrix = view_matrix.dot(model_matrix)
+            world_coord = np.ones((4, 1))
+            world_coord[:3, 0] = point - self.sim.data.get_camera_xpos(camera_name)
+
+            clip = MVP_matrix.dot(world_coord)
+            ndc = clip[:3] / clip[3]  # everything should now be in -1 to 1!!
+            print("----ndc")
+            print(ndc)
+            col, row = (ndc[0] + 1) * img_width / 2, (ndc[1] + 1) * img_height / 2
+
+            return np.array([row, col])                 # rendering flipped around in height
 
 
     def discretize_goal_space(self, goals):
