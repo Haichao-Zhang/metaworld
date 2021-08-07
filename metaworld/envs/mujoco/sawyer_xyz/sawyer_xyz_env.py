@@ -446,9 +446,10 @@ class SawyerXYZEnv(SawyerMocapBase, metaclass=abc.ABCMeta):
             model_matrix[-1, -1] = 1
 
             fovy_radians = np.deg2rad(self.sim.model.cam_fovy[self.sim.model.camera_name2id(camera_name)])
-            # uh = 1. / np.tan(fovy_radians / 2)
-            uh = 1. / (np.tan(fovy_radians) * 2)
+            uh = 1. / np.tan(fovy_radians / 2)
+            # uh = 1. / (np.tan(fovy_radians) * 2)
             uw = uh / (img_width / img_height)
+
             extent = self.sim.model.stat.extent
             far, near = self.sim.model.vis.map.zfar * extent, self.sim.model.vis.map.znear * extent
             view_matrix = np.array([[uw, 0., 0., 0.],                        # matrix definition from
@@ -464,9 +465,9 @@ class SawyerXYZEnv(SawyerMocapBase, metaclass=abc.ABCMeta):
             ndc = clip[:3] / clip[3]  # everything should now be in -1 to 1!!
             print("----ndc")
             print(ndc)
-            col, row = (ndc[0] + 1) * img_width / 2, (ndc[1] + 1) * img_height / 2
+            col, row = (ndc[0] + 1) * img_width / 2, (-ndc[1] + 1) * img_height / 2
 
-            return np.array([row, col])                 # rendering flipped around in height
+            return np.array([img_height - row, col])                 # rendering flipped around in height
 
 
     def discretize_goal_space(self, goals):

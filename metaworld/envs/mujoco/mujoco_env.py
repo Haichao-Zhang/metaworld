@@ -150,6 +150,9 @@ class MujocoEnv(gym.Env, abc.ABC):
                 width, height, mode='offscreen', camera_name=camera_name)
 
             FOV = 90
+            FOV = self.sim.model.cam_fovy[self.sim.model.camera_name2id(camera_name)]
+            print(FOV)
+
             pt2d_traj = self.project_point_world_to_ego(fov=FOV, img_height=height,img_width=width, camera_name=camera_name)
 
             # original image is upside-down, so flip it
