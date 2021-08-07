@@ -4,11 +4,213 @@ import pickle
 
 from gym.spaces import Box
 from gym.spaces import Discrete
+import math
 import mujoco_py
 import numpy as np
 
 from metaworld.envs import reward_utils
 from metaworld.envs.mujoco.mujoco_env import MujocoEnv, _assert_task_is_set
+
+
+def mat2euler(mat):
+    """Convert Rotation Matrix to Euler Angles.  See rotation.py for notes"""
+    mat = np.asarray(mat, dtype=np.float64)
+    assert mat.shape[-2:] == (3, 3), "Invalid shape matrix {}".format(mat)
+
+    cy = np.sqrt(mat[..., 2, 2] * mat[..., 2, 2] + mat[..., 1, 2] * mat[..., 1, 2])
+    condition = cy > 1e-5
+    euler = np.empty(mat.shape[:-1], dtype=np.float64)
+    euler[..., 2] = np.where(
+        condition,
+        -np.arctan2(mat[..., 0, 1], mat[..., 0, 0]),
+        -np.arctan2(-mat[..., 1, 0], mat[..., 1, 1]),
+    )
+    euler[..., 1] = np.where(
+        condition, -np.arctan2(-mat[..., 0, 2], cy), -np.arctan2(-mat[..., 0, 2], cy)
+    )
+    euler[..., 0] = np.where(
+        condition, -np.arctan2(mat[..., 1, 2], mat[..., 2, 2]), 0.0
+    )
+    return euler
+
+
+def global2cam(obj_pos, cam_pos, cam_ori, image_w, image_h, fov=90):
+    """
+    :param obj_pos: 3D coordinates of the joint from MuJoCo in nparray [m]
+    :param cam_pos: 3D coordinates of the camera from MuJoCo in nparray [m]
+    :param cam_ori: camera 3D rotation (Rotation order of x->y->z) from MuJoCo in nparray [rad]
+    :param fov: field of view in integer [degree]
+    :return: Heatmap of the object in the 2D pixel space.
+    """
+    # output_size = [img_height, img_width]
+    e = np.array([image_h/2, image_w/2, 1])
+    fov = np.array([fov])
+
+    # Converting the MuJoCo coordinate into typical computer vision coordinate.
+    cam_ori_cv = np.array([cam_ori[1], cam_ori[0], -cam_ori[2]])
+    obj_pos_cv = np.array([obj_pos[1], obj_pos[0], -obj_pos[2]])
+    cam_pos_cv = np.array([cam_pos[1], cam_pos[0], -cam_pos[2]])
+
+    obj_pos_in_2D, _ = get_2D_from_3D(obj_pos_cv, cam_pos_cv, cam_ori_cv, fov, e)
+
+
+
+    # # mujoco [x, y, z] -> carla [-z, x, y]
+    # cam_ori_cv = np.array([-cam_ori[2], cam_ori[0], cam_ori[1]])
+    # obj_pos_cv = np.array([-obj_pos[2], obj_pos[0], obj_pos[1]])
+    # cam_pos_cv = np.array([-cam_pos[2], cam_pos[0], cam_pos[1]])
+
+    # obj_pos_in_2D = _world_to_camera(obj_pos_cv, cam_pos_cv, cam_ori, image_w, image_h, fov)
+
+    # print('---------')
+    # print(obj_pos_in_2D_old)
+    # print(obj_pos_in_2D)
+
+    return obj_pos_in_2D
+
+
+def _get_transform_matrix(pos, theta):
+    """Computes the 4-matrix form of the transformation
+    https://github.com/carla-simulator/carla/blob/5bd3dab1013df554c0198662e0ceb50b7857feba/LibCarla/source/carla/geom/Transform.h
+
+    Args:
+        pos: position
+        theta: orientation (in radians): x, y, z, pitch, yaw, roll
+    Returns:
+        np.ndarray: shape is same as location
+    """
+    x, y, z = pos[0], pos[1], pos[2]
+    pitch = theta[0]
+    yaw = theta[1]
+    roll = theta[2]
+
+    cy, sy = np.cos(yaw), np.sin(yaw)
+
+    cr, sr = np.cos(roll), np.sin(roll)
+
+    cp, sp = np.cos(pitch), np.sin(pitch)
+
+
+    mat = np.array(
+        [[cp * cy, cy * sp * sr - sy * cr, -cy * sp * cr - sy * sr, x],
+         [cp * sy, sy * sp * sr + cy * cr, -sy * sp * cr + cy * sr, y],
+         [sp, -cp * sr, cp * cr, z], [0., 0., 0., 1.]])
+    return mat
+
+
+
+def _world_to_camera(world_points, cam_pos, cam_ori, image_w, image_h, fov=90):
+    """
+    https://github.com/carla-simulator/carla/blob/master/PythonAPI/examples/lidar_to_camera.py
+    https://web.stanford.edu/class/cs231a/course_notes/01-camera-models.pdf
+
+    Args:
+        world_points (np.ndarray): [N, 3] or (3, ) in world coordinate
+        camera (Carla.sensor):
+    Output:
+        [3, N]
+    """
+    # Build the K projection matrix:
+    # K = [[Fx,  0, image_w/2],
+    #      [ 0, Fy, image_h/2],
+    #      [ 0,  0,         1]]
+
+    if world_points.ndim == 1:
+        assert world_points.shape[0] == 3
+        world_points = np.expand_dims(world_points, axis=1)
+    else:
+        #[N, 3] -> [3, N]
+        assert world_points.shape[1] == 3
+        world_points = np.transpose(world_points, (1, 0))
+
+    focal = image_w / (2.0 * np.tan(fov * np.pi / 360.0))
+
+    print(world_points.shape)
+    # In this case Fx and Fy are the same since the pixel aspect
+    # ratio is 1
+    K = np.identity(3)
+    K[0, 0] = K[1, 1] = focal
+    K[0, 2] = image_w / 2.0
+    K[1, 2] = image_h / 2.0
+
+    # [4, 4]
+    world_2_camera = np.linalg.inv(
+        _get_transform_matrix(cam_pos, cam_ori))
+
+    # world_2_camera = _get_inverse_transform_matrix(camera.get_transform())
+
+    # Transform the points from world space to camera space.
+
+
+
+    world_points = np.concatenate(
+        (world_points, np.ones_like(world_points[0:1, ...])), axis=0)
+
+    sensor_points = np.dot(world_2_camera, world_points)
+    # Or, in this case, is the same as swapping:
+    # (x, y ,z) -> (y, -z, x)
+    point_in_camera_coords = np.array(
+        [sensor_points[1], sensor_points[2] * -1, sensor_points[0]])
+
+    cam_z = point_in_camera_coords[2]
+    valid_ind = cam_z >= 0
+    point_in_camera_coords = point_in_camera_coords[:, valid_ind]
+
+
+    # Finally we can use our K matrix to do the actual 3D -> 2D.
+    points_2d = np.dot(K, point_in_camera_coords)
+
+    # Normalize the x, y values by the 3rd value.
+    points_2d = np.array([
+        points_2d[0, :] / points_2d[2, :],
+        points_2d[1, :] / points_2d[2, :], points_2d[2, :]
+    ])
+
+    return points_2d
+
+
+
+def get_2D_from_3D(a, c, theta, fov, e):
+    """
+    :param a: 3D coordinates of the joint in nparray [m]
+    :param c: 3D coordinates of the camera in nparray [m]
+    :param theta: camera 3D rotation (Rotation order of x->y->z) in nparray [rad]
+    :param fov: field of view in integer [degree]
+    :param e:
+    :return:
+        - (bx, by) ==> 2D coordinates of the obj [pixel]
+        - d ==> 3D coordinates of the joint (relative to the camera) [m]
+    """
+
+    # Get the vector from camera to object in global coordinate.
+    ac_diff = a - c
+
+    # Rotate the vector in to camera coordinate
+    x_rot = np.array([[1 ,0, 0],
+                    [0, np.cos(theta[0]), np.sin(theta[0])],
+                    [0, -np.sin(theta[0]), np.cos(theta[0])]])
+
+    y_rot = np.array([[np.cos(theta[1]) ,0, -np.sin(theta[1])],
+                [0, 1, 0],
+                [np.sin(theta[1]), 0, np.cos(theta[1])]])
+
+    z_rot = np.array([[np.cos(theta[2]) ,np.sin(theta[2]), 0],
+                [-np.sin(theta[2]), np.cos(theta[2]), 0],
+                [0, 0, 1]])
+
+    transform = z_rot.dot(y_rot.dot(x_rot))
+    d = transform.dot(ac_diff)
+
+    # scaling of projection plane using fov
+    fov_rad = np.deg2rad(fov)
+    e[2] *= e[1]*1/np.tan(fov_rad/2.0)
+
+    # Projection from d to 2D
+    bx = e[2]*d[0]/(d[2]) + e[0]
+    by = e[2]*d[1]/(d[2]) + e[1]
+
+    return (bx, by), d
+
 
 
 class SawyerMocapBase(MujocoEnv, metaclass=abc.ABCMeta):
@@ -172,6 +374,7 @@ class SawyerXYZEnv(SawyerMocapBase, metaclass=abc.ABCMeta):
         pos_delta = action * self.action_scale
         new_mocap_pos = self.data.mocap_pos + pos_delta[None]
 
+
         new_mocap_pos[0, :] = np.clip(
             new_mocap_pos[0, :],
             self.mocap_low,
@@ -179,6 +382,26 @@ class SawyerXYZEnv(SawyerMocapBase, metaclass=abc.ABCMeta):
         )
         self.data.set_mocap_pos('mocap', new_mocap_pos)
         self.data.set_mocap_quat('mocap', np.array([1, 0, 1, 0]))
+
+
+    def get_position(self):
+        pos_hand = self.get_endeff_pos()
+        return pos_hand
+
+    def project_point_world_to_ego(self, fov=60, img_height=480, img_width=640, camera_name='corner'):
+        """Project 3d points from world coordinate into camera view coordinate
+        """
+        cam_pos = self.data.get_camera_xpos(camera_name)
+        cam_ori = mat2euler(self.data.get_camera_xmat(camera_name))
+
+        obj_pos = self.get_position()
+        print(obj_pos)
+        # output_size = [img_height, img_width]
+        cam_2d = global2cam(obj_pos, cam_pos, cam_ori, img_width, img_height, fov=fov)
+
+        return cam_2d
+
+
 
     def discretize_goal_space(self, goals):
         assert False
