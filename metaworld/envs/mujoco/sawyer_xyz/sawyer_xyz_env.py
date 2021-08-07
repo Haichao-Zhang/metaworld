@@ -47,9 +47,9 @@ def global2cam(obj_pos, cam_pos, cam_ori, image_w, image_h, fov=90):
     fov = np.array([fov])
 
     # Converting the MuJoCo coordinate into typical computer vision coordinate.
-    cam_ori_cv = np.array([cam_ori[1], cam_ori[0], -cam_ori[2]])
-    obj_pos_cv = np.array([obj_pos[1], obj_pos[0], -obj_pos[2]])
-    cam_pos_cv = np.array([cam_pos[1], cam_pos[0], -cam_pos[2]])
+    cam_ori_cv = np.array([cam_ori[1], cam_ori[0], cam_ori[2]])
+    obj_pos_cv = np.array([obj_pos[1], obj_pos[0], obj_pos[2]])
+    cam_pos_cv = np.array([cam_pos[1], cam_pos[0], cam_pos[2]])
 
     obj_pos_in_2D, _ = get_2D_from_3D(obj_pos_cv, cam_pos_cv, cam_ori_cv, fov, e)
 
@@ -351,6 +351,8 @@ class SawyerXYZEnv(SawyerMocapBase, metaclass=abc.ABCMeta):
         # very first observation)
         self._prev_obs = self._get_curr_obs_combined_no_goal()
 
+        self._traj = []
+
     def _set_task_inner(self):
         # Doesn't absorb "extra" kwargs, to ensure nothing's missed.
         pass
@@ -384,22 +386,76 @@ class SawyerXYZEnv(SawyerMocapBase, metaclass=abc.ABCMeta):
         self.data.set_mocap_quat('mocap', np.array([1, 0, 1, 0]))
 
 
+    def get_traj(self):
+        return self._traj
+
     def get_position(self):
         pos_hand = self.get_endeff_pos()
         return pos_hand
 
-    def project_point_world_to_ego(self, fov=60, img_height=480, img_width=640, camera_name='corner'):
+
+
+def project_point(self, point, img_height=480, img_width=640, camera_name=""):
+        model_matrix = np.zeros((4, 4))
+        model_matrix[:3, :3] = self.sim.data.get_camera_xmat(camera_name).T
+        model_matrix[-1, -1] = 1
+
+        fovy_radians = np.deg2rad(self.sim.model.cam_fovy[self.sim.model.camera_name2id(camera_name)])
+        uh = 1. / np.tan(fovy_radians / 2)
+        uw = uh / (img_width / img_height)
+        extent = self.sim.model.stat.extent
+        far, near = self.sim.model.vis.map.zfar * extent, self.sim.model.vis.map.znear * extent
+        view_matrix = np.array([[uw, 0., 0., 0.],                        # matrix definition from
+                                [0., uh, 0., 0.],                        # https://stackoverflow.com/questions/18404890/how-to-build-perspective-projection-matrix-no-api
+                                [0., 0., far / (far - near), -1.],
+                                [0., 0., -2*far*near/(far - near), 0.]]) # Note Mujoco doubles this quantity
+
+        MVP_matrix = view_matrix.dot(model_matrix)
+        world_coord = np.ones((4, 1))
+        world_coord[:3, 0] = point - self.sim.data.get_camera_xpos(camera_name)
+
+        clip = MVP_matrix.dot(world_coord)
+        ndc = clip[:3] / clip[3]  # everything should now be in -1 to 1!!
+        col, row = (ndc[0] + 1) * self._frame_width / 2, (-ndc[1] + 1) * img_height / 2
+
+        return self._frame_height - row, col                 # rendering flipped around in height
+
+    def project_point_world_to_ego(self, fov=60, img_height=480, img_width=640, camera_name=""):
         """Project 3d points from world coordinate into camera view coordinate
         """
         cam_pos = self.data.get_camera_xpos(camera_name)
+        print(self.data.get_camera_xmat(camera_name))
         cam_ori = mat2euler(self.data.get_camera_xmat(camera_name))
+        # cam_ori = np.array([3.9, 2.3, 0.6])
+        print('---ori')
+        print(cam_ori)
+        print(cam_pos)
 
-        obj_pos = self.get_position()
-        print(obj_pos)
+        # obj_pos = self.get_position()
+        traj = self.get_traj()
+
+
+
+        # debug code
+        # obj_pos = np.array([1., 2., 3.])
+
+        # traj = [np.array([-1., 0., 0.]), np.array([0., 0., 0.]), np.array([1., 0., 0.])]
+        # traj = [self._get_pos_goal()]
+        # # traj = [np.array([0.00776335, 0.84191945, 0.22130488])]
+        traj = [np.array([1, 2, 3])]
+        traj = [np.array([0.2, 0.25, 1.])]
+        # traj = [obj_pos]
+
+        # print(traj)
+
         # output_size = [img_height, img_width]
-        cam_2d = global2cam(obj_pos, cam_pos, cam_ori, img_width, img_height, fov=fov)
+        cam_2d_traj = []
+        for pt in traj:
+            cam_2d = global2cam(pt, cam_pos, cam_ori, img_width, img_height, fov=fov)
+            cam_2d_traj.append(cam_2d)
 
-        return cam_2d
+        print(cam_2d_traj)
+        return cam_2d_traj
 
 
 
@@ -660,6 +716,10 @@ class SawyerXYZEnv(SawyerMocapBase, metaclass=abc.ABCMeta):
             return self._last_stable_obs
 
         reward, info = self.evaluate_state(self._last_stable_obs, action)
+
+        # save trajectory for rendering
+        self._traj.append(self.get_position())
+
         return self._last_stable_obs, reward, False, info
 
     def evaluate_state(self, obs, action):
@@ -679,6 +739,7 @@ class SawyerXYZEnv(SawyerMocapBase, metaclass=abc.ABCMeta):
 
     def reset(self):
         self.curr_path_length = 0
+        self._traj = []
         return super().reset()
 
     def _reset_hand(self, steps=50):
