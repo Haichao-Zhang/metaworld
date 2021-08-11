@@ -59,8 +59,6 @@ def global2cam(obj_pos, cam_pos, cam_ori, image_w, image_h, fov=90):
 
     obj_pos_in_2D = get_2D_from_3D(obj_pos_cv, cam_pos_cv, cam_ori_cv, fov, e)
 
-    print(obj_pos_in_2D.shape)
-
 
 
     # # mujoco [x, y, z] -> carla [-z, x, y]
@@ -368,6 +366,7 @@ class SawyerXYZEnv(SawyerMocapBase, metaclass=abc.ABCMeta):
 
         self._traj = []
         self._cnt = 0
+        self._prev_traj = None
 
     def _set_task_inner(self):
         # Doesn't absorb "extra" kwargs, to ensure nothing's missed.
@@ -429,10 +428,14 @@ class SawyerXYZEnv(SawyerMocapBase, metaclass=abc.ABCMeta):
     def load_traj(self):
         # load traj
         folder_dir = "/data/metaworld_traj/"
-        traj_range = [1, 40]
+        traj_range = [1, 100]
         traj_set = []
         for i in range(traj_range[0], traj_range[1]):
-            traj = np.load(folder_dir + "traj_{}.npy".format(self._cnt))
+            file_i = folder_dir + "traj_{}.npy".format(i)
+            traj = np.load(file_i)
+            # empty array
+            if traj.size == 0:
+                continue
             traj_set.append(traj)
         return traj_set
 
@@ -810,11 +813,16 @@ class SawyerXYZEnv(SawyerMocapBase, metaclass=abc.ABCMeta):
 
     def reset(self):
         self.curr_path_length = 0
+
         # # save traj
         traj = self.get_traj()
-        folder_dir = "/data/metaworld_traj/"
-        np.save(folder_dir + "traj_{}".format(self._cnt), traj)
-        self._cnt += 1
+
+        # # empty array
+        # if traj.size > 0:
+        #     folder_dir = "/data/metaworld_traj/"
+        #     np.save(folder_dir + "traj_{}".format(self._cnt), traj)
+
+        #     self._cnt += 1
 
         self._traj = []
         return super().reset()
