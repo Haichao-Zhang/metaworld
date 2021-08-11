@@ -47,20 +47,25 @@ def global2cam(obj_pos, cam_pos, cam_ori, image_w, image_h, fov=90):
     fov = np.array([fov])
 
     # Converting the MuJoCo coordinate into typical computer vision coordinate.
-    cam_ori_cv = np.array([cam_ori[1], cam_ori[0], cam_ori[2]])
-    obj_pos_cv = np.array([obj_pos[1], obj_pos[0], obj_pos[2]])
-    cam_pos_cv = np.array([cam_pos[1], cam_pos[0], cam_pos[2]])
+    # cam_ori_cv = np.array([cam_ori[1], cam_ori[0], cam_ori[2]])
+    # obj_pos_cv = np.array([obj_pos[1], obj_pos[0], obj_pos[2]])
+    # cam_pos_cv = np.array([cam_pos[1], cam_pos[0], cam_pos[2]])
+
+
+    cam_ori_cv = cam_ori
+    obj_pos_cv = obj_pos
+    cam_pos_cv = cam_pos
 
     obj_pos_in_2D, _ = get_2D_from_3D(obj_pos_cv, cam_pos_cv, cam_ori_cv, fov, e)
 
 
 
     # # mujoco [x, y, z] -> carla [-z, x, y]
-    # cam_ori_cv = np.array([-cam_ori[2], cam_ori[0], cam_ori[1]])
-    # obj_pos_cv = np.array([-obj_pos[2], obj_pos[0], obj_pos[1]])
-    # cam_pos_cv = np.array([-cam_pos[2], cam_pos[0], cam_pos[1]])
+    # cam_ori_cv = np.array([cam_ori[2], cam_ori[0], cam_ori[1]])
+    # obj_pos_cv = np.array([obj_pos[2], obj_pos[0], obj_pos[1]])
+    # cam_pos_cv = np.array([cam_pos[2], cam_pos[0], cam_pos[1]])
 
-    # obj_pos_in_2D = _world_to_camera(obj_pos_cv, cam_pos_cv, cam_ori, image_w, image_h, fov)
+    # obj_pos_in_2D = _world_to_camera(obj_pos_cv, cam_pos_cv, cam_ori_cv, image_w, image_h, fov)
 
     # print('---------')
     # print(obj_pos_in_2D_old)
@@ -129,9 +134,11 @@ def _world_to_camera(world_points, cam_pos, cam_ori, image_w, image_h, fov=90):
     # In this case Fx and Fy are the same since the pixel aspect
     # ratio is 1
     K = np.identity(3)
-    K[0, 0] = K[1, 1] = focal
+    K[0, 0] = focal
+    K[1, 1] = focal
     K[0, 2] = image_w / 2.0
     K[1, 2] = image_h / 2.0
+
 
     # [4, 4]
     world_2_camera = np.linalg.inv(
@@ -153,8 +160,8 @@ def _world_to_camera(world_points, cam_pos, cam_ori, image_w, image_h, fov=90):
         [sensor_points[1], sensor_points[2] * -1, sensor_points[0]])
 
     cam_z = point_in_camera_coords[2]
-    valid_ind = cam_z >= 0
-    point_in_camera_coords = point_in_camera_coords[:, valid_ind]
+    # valid_ind = cam_z >= 0
+    # point_in_camera_coords = point_in_camera_coords[:, valid_ind]
 
 
     # Finally we can use our K matrix to do the actual 3D -> 2D.
@@ -431,10 +438,10 @@ class SawyerXYZEnv(SawyerMocapBase, metaclass=abc.ABCMeta):
         for pt in traj:
             cam_2d = global2cam(pt, cam_pos, cam_ori, img_width, img_height, fov=fov)
 
-            pt2d = self.project_point(pt, img_height=img_height, img_width=img_width, camera_name=camera_name)
+            # pt2d = self.project_point(pt, img_height=img_height, img_width=img_width, camera_name=camera_name)
 
-            print(pt2d)
-            cam_2d_traj.append(pt2d)
+            print(cam_2d)
+            cam_2d_traj.append(cam_2d)
         return cam_2d_traj
 
 
@@ -467,7 +474,7 @@ class SawyerXYZEnv(SawyerMocapBase, metaclass=abc.ABCMeta):
             print(ndc)
             col, row = (ndc[0] + 1) * img_width / 2, (-ndc[1] + 1) * img_height / 2
 
-            return np.array([img_height - row, col])                 # rendering flipped around in height
+            return np.array([row, col])                 # rendering flipped around in height
 
 
     def discretize_goal_space(self, goals):

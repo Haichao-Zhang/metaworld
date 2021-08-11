@@ -124,7 +124,7 @@ class MujocoEnv(gym.Env, abc.ABC):
         width=480,
         height=480,
         camera_id=None,
-        camera_name="topview"
+        camera_name="corner"
     ):
         # if mode == "rgb_array" or mode == "depth_array":
         #     if camera_id is not None and camera_name is not None:
@@ -149,11 +149,11 @@ class MujocoEnv(gym.Env, abc.ABC):
             data = self.sim.render(
                 width, height, mode='offscreen', camera_name=camera_name)
 
-            FOV = 90
             FOV = self.sim.model.cam_fovy[self.sim.model.camera_name2id(camera_name)]
             print(FOV)
 
             pt2d_traj = self.project_point_world_to_ego(fov=FOV, img_height=height,img_width=width, camera_name=camera_name)
+
 
             # original image is upside-down, so flip it
             # img =  data[::-1, :]
@@ -162,7 +162,11 @@ class MujocoEnv(gym.Env, abc.ABC):
             # py = int(pt2d[1])
             for pt2d in pt2d_traj:
                 px = int(pt2d[1])
-                py = int(pt2d[0])
+                py = height - int(pt2d[0])
+
+                ty = py
+                py = width - px
+                px = ty
                 img[py:py+3, px:px+3, 1] = 250
 
             return img
