@@ -402,7 +402,7 @@ class SawyerXYZEnv(SawyerMocapBase, metaclass=abc.ABCMeta):
         self.data.set_mocap_quat('mocap', np.array([1, 0, 1, 0]))
 
 
-    def get_traj(self, interp=True):
+    def get_traj(self, interp=False):
         traj = self._traj
         # [L, 3]
 
@@ -429,10 +429,10 @@ class SawyerXYZEnv(SawyerMocapBase, metaclass=abc.ABCMeta):
     def load_traj(self):
         # load traj
         folder_dir = "/data/metaworld_traj/"
-        traj_range = [0, 10]
+        traj_range = [1, 40]
         traj_set = []
         for i in range(traj_range[0], traj_range[1]):
-            traj = np.load(folder_dir + "traj_{}".format(self._cnt))
+            traj = np.load(folder_dir + "traj_{}.npy".format(self._cnt))
             traj_set.append(traj)
         return traj_set
 
@@ -448,7 +448,7 @@ class SawyerXYZEnv(SawyerMocapBase, metaclass=abc.ABCMeta):
         """Project 3d points from world coordinate into camera view coordinate
         """
         cam_pos = self.data.get_camera_xpos(camera_name)
-        print(self.data.get_camera_xmat(camera_name))
+        cam_pos = np.reshape(cam_pos, (1, 3))
         cam_ori = mat2euler(self.data.get_camera_xmat(camera_name))
         # cam_ori = np.array([3.9, 2.3, 0.6])
         # print('---ori')
@@ -459,12 +459,10 @@ class SawyerXYZEnv(SawyerMocapBase, metaclass=abc.ABCMeta):
         traj = self.get_traj()
 
 
-        print(traj)
         # output_size = [img_height, img_width]
         if len(traj) == 0:
             return []
         else:
-            cam_pos = np.reshape(cam_pos, (1, 3))
             cam_2d_traj = global2cam(traj, cam_pos, cam_ori, img_width, img_height, fov=fov)
 
         # for pt in traj:
@@ -480,7 +478,7 @@ class SawyerXYZEnv(SawyerMocapBase, metaclass=abc.ABCMeta):
         """Project 3d points from world coordinate into camera view coordinate
         """
         cam_pos = self.data.get_camera_xpos(camera_name)
-        print(self.data.get_camera_xmat(camera_name))
+        cam_pos = np.reshape(cam_pos, (1, 3))
         cam_ori = mat2euler(self.data.get_camera_xmat(camera_name))
         # cam_ori = np.array([3.9, 2.3, 0.6])
         # print('---ori')
@@ -490,14 +488,14 @@ class SawyerXYZEnv(SawyerMocapBase, metaclass=abc.ABCMeta):
         # obj_pos = self.get_position()
         traj_set = self.load_traj()
 
-        # output_size = [img_height, img_width]
-        cam_2d_traj = []
-        for pt in traj:
-            cam_2d = global2cam(pt, cam_pos, cam_ori, img_width, img_height, fov=fov)
-
-            # pt2d = self.project_point(pt, img_height=img_height, img_width=img_width, camera_name=camera_name)
-            cam_2d_traj.append(cam_2d)
-        return cam_2d_traj
+        if len(traj_set) == 0:
+            return []
+        else:
+            cam_2d_traj_set = []
+            for traj in traj_set:
+                cam_2d_traj = global2cam(traj, cam_pos, cam_ori, img_width, img_height, fov=fov)
+                cam_2d_traj_set.append(cam_2d_traj)
+            return cam_2d_traj_set
 
 
 
@@ -813,10 +811,10 @@ class SawyerXYZEnv(SawyerMocapBase, metaclass=abc.ABCMeta):
     def reset(self):
         self.curr_path_length = 0
         # # save traj
-        # traj = self.get_traj()
-        # folder_dir = "/data/metaworld_traj/"
-        # np.save(folder_dir + "traj_{}".format(self._cnt), traj)
-        # self._cnt += 1
+        traj = self.get_traj()
+        folder_dir = "/data/metaworld_traj/"
+        np.save(folder_dir + "traj_{}".format(self._cnt), traj)
+        self._cnt += 1
 
         self._traj = []
         return super().reset()

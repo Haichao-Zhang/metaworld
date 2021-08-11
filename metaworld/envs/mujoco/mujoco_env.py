@@ -167,6 +167,32 @@ class MujocoEnv(gym.Env, abc.ABC):
                     img[py:py+3, px:px+3, 1] = 250
             return img
 
+
+        def render_single_view_set(camera_name):
+            data = self.sim.render(
+                width, height, mode='offscreen', camera_name=camera_name)
+
+            FOV = self.sim.model.cam_fovy[self.sim.model.camera_name2id(camera_name)]
+            print(FOV)
+
+            pt2d_traj_set = self.project_traj_set_world_to_ego(fov=FOV, img_height=height,img_width=width, camera_name=camera_name)
+
+
+            # original image is upside-down, so flip it
+            # img =  data[::-1, :]
+            img = data
+            # px = width - int(pt2d[0])
+            # py = int(pt2d[1])
+            for pt2d_traj in pt2d_traj_set:
+                if isinstance(pt2d_traj, np.ndarray):
+                    for i in range(0, pt2d_traj.shape[0]):
+                        pt2d = pt2d_traj[i]
+                        py = width - int(pt2d[1])
+                        px = height - int(pt2d[0])
+                        img[py:py+3, px:px+3, 1] = 250
+            return img
+
+
         if mode == "rgb_array":
             # window size used for old mujoco-py:
             # data = self._get_viewer(mode).read_pixels(width, height, depth=False)
@@ -176,7 +202,9 @@ class MujocoEnv(gym.Env, abc.ABC):
             elif isinstance(camera_name, list):
                 imgs = []
                 for name in camera_name:
-                    t_img = render_single_view(name)
+                    # t_img = render_single_view(name)
+                    t_img = render_single_view_set(name)
+
                     imgs.append(t_img)
                 img = np.concatenate(imgs, axis=1)
 
