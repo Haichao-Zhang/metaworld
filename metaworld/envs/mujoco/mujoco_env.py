@@ -1,6 +1,8 @@
 import abc
 import warnings
 
+from numpy.lib.type_check import _imag_dispatcher
+
 import glfw
 from gym import error
 from gym.utils import seeding
@@ -142,10 +144,7 @@ class MujocoEnv(gym.Env, abc.ABC):
 
         #     self._get_viewer(mode).render(width, height, camera_id=camera_id)
 
-        if mode == "rgb_array":
-            # window size used for old mujoco-py:
-            # data = self._get_viewer(mode).read_pixels(width, height, depth=False)
-
+        def render_single_view(camera_name):
             data = self.sim.render(
                 width, height, mode='offscreen', camera_name=camera_name)
 
@@ -168,7 +167,14 @@ class MujocoEnv(gym.Env, abc.ABC):
                 py = width - px
                 px = ty
                 img[py:py+3, px:px+3, 1] = 250
+            return img
 
+        if mode == "rgb_array":
+            # window size used for old mujoco-py:
+            # data = self._get_viewer(mode).read_pixels(width, height, depth=False)
+
+            if isinstance(camera_name, str):
+                img = render_single_view(camera_name)
             return img
 
         elif mode == "depth_array":
