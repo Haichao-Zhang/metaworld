@@ -130,7 +130,6 @@ def _world_to_camera(world_points, cam_pos, cam_ori, image_w, image_h, fov=90):
 
     focal = image_w / (2.0 * np.tan(fov * np.pi / 360.0))
 
-    print(world_points.shape)
     # In this case Fx and Fy are the same since the pixel aspect
     # ratio is 1
     K = np.identity(3)
@@ -412,9 +411,9 @@ class SawyerXYZEnv(SawyerMocapBase, metaclass=abc.ABCMeta):
         print(self.data.get_camera_xmat(camera_name))
         cam_ori = mat2euler(self.data.get_camera_xmat(camera_name))
         # cam_ori = np.array([3.9, 2.3, 0.6])
-        print('---ori')
-        print(cam_ori)
-        print(cam_pos)
+        # print('---ori')
+        # print(cam_ori)
+        # print(cam_pos)
 
         # obj_pos = self.get_position()
         traj = self.get_traj()
@@ -439,8 +438,6 @@ class SawyerXYZEnv(SawyerMocapBase, metaclass=abc.ABCMeta):
             cam_2d = global2cam(pt, cam_pos, cam_ori, img_width, img_height, fov=fov)
 
             # pt2d = self.project_point(pt, img_height=img_height, img_width=img_width, camera_name=camera_name)
-
-            print(cam_2d)
             cam_2d_traj.append(cam_2d)
         return cam_2d_traj
 

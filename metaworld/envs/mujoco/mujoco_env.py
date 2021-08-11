@@ -126,7 +126,7 @@ class MujocoEnv(gym.Env, abc.ABC):
         width=480,
         height=480,
         camera_id=None,
-        camera_name="corner"
+        camera_name=["topview", "corner", "corner2"]
     ):
         # if mode == "rgb_array" or mode == "depth_array":
         #     if camera_id is not None and camera_name is not None:
@@ -160,12 +160,8 @@ class MujocoEnv(gym.Env, abc.ABC):
             # px = width - int(pt2d[0])
             # py = int(pt2d[1])
             for pt2d in pt2d_traj:
-                px = int(pt2d[1])
-                py = height - int(pt2d[0])
-
-                ty = py
-                py = width - px
-                px = ty
+                py = width - int(pt2d[1])
+                px = height - int(pt2d[0])
                 img[py:py+3, px:px+3, 1] = 250
             return img
 
@@ -175,6 +171,13 @@ class MujocoEnv(gym.Env, abc.ABC):
 
             if isinstance(camera_name, str):
                 img = render_single_view(camera_name)
+            elif isinstance(camera_name, list):
+                imgs = []
+                for name in camera_name:
+                    t_img = render_single_view(name)
+                    imgs.append(t_img)
+                img = np.concatenate(imgs, axis=1)
+
             return img
 
         elif mode == "depth_array":
