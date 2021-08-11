@@ -126,7 +126,7 @@ class MujocoEnv(gym.Env, abc.ABC):
         width=480,
         height=480,
         camera_id=None,
-        camera_name=["topview", "corner", "corner2"]
+        camera_name=["view1", "view2"]
     ):
         # if mode == "rgb_array" or mode == "depth_array":
         #     if camera_id is not None and camera_name is not None:
@@ -159,10 +159,12 @@ class MujocoEnv(gym.Env, abc.ABC):
             img = data
             # px = width - int(pt2d[0])
             # py = int(pt2d[1])
-            for pt2d in pt2d_traj:
-                py = width - int(pt2d[1])
-                px = height - int(pt2d[0])
-                img[py:py+3, px:px+3, 1] = 250
+            if isinstance(pt2d_traj, np.ndarray):
+                for i in range(0, pt2d_traj.shape[0]):
+                    pt2d = pt2d_traj[i]
+                    py = width - int(pt2d[1])
+                    px = height - int(pt2d[0])
+                    img[py:py+3, px:px+3, 1] = 250
             return img
 
         if mode == "rgb_array":

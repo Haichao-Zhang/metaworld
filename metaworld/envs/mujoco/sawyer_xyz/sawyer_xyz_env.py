@@ -7,6 +7,7 @@ from gym.spaces import Discrete
 import math
 import mujoco_py
 import numpy as np
+import scipy.interpolate
 
 from metaworld.envs import reward_utils
 from metaworld.envs.mujoco.mujoco_env import MujocoEnv, _assert_task_is_set
@@ -36,7 +37,7 @@ def mat2euler(mat):
 
 def global2cam(obj_pos, cam_pos, cam_ori, image_w, image_h, fov=90):
     """
-    :param obj_pos: 3D coordinates of the joint from MuJoCo in nparray [m]
+    :param obj_pos: 3D coordinates of the joint from MuJoCo in nparray [m], [L, 3]
     :param cam_pos: 3D coordinates of the camera from MuJoCo in nparray [m]
     :param cam_ori: camera 3D rotation (Rotation order of x->y->z) from MuJoCo in nparray [rad]
     :param fov: field of view in integer [degree]
@@ -56,7 +57,9 @@ def global2cam(obj_pos, cam_pos, cam_ori, image_w, image_h, fov=90):
     obj_pos_cv = obj_pos
     cam_pos_cv = cam_pos
 
-    obj_pos_in_2D, _ = get_2D_from_3D(obj_pos_cv, cam_pos_cv, cam_ori_cv, fov, e)
+    obj_pos_in_2D = get_2D_from_3D(obj_pos_cv, cam_pos_cv, cam_ori_cv, fov, e)
+
+    print(obj_pos_in_2D.shape)
 
 
 
@@ -178,8 +181,8 @@ def _world_to_camera(world_points, cam_pos, cam_ori, image_w, image_h, fov=90):
 
 def get_2D_from_3D(a, c, theta, fov, e):
     """
-    :param a: 3D coordinates of the joint in nparray [m]
-    :param c: 3D coordinates of the camera in nparray [m]
+    :param a: 3D coordinates of the joint in nparray [m]: [L, 3]
+    :param c: 3D coordinates of the camera in nparray [m], [1, 3]
     :param theta: camera 3D rotation (Rotation order of x->y->z) in nparray [rad]
     :param fov: field of view in integer [degree]
     :param e:
@@ -189,6 +192,7 @@ def get_2D_from_3D(a, c, theta, fov, e):
     """
 
     # Get the vector from camera to object in global coordinate.
+    # [L, 3]
     ac_diff = a - c
 
     # Rotate the vector in to camera coordinate
@@ -205,7 +209,8 @@ def get_2D_from_3D(a, c, theta, fov, e):
                 [0, 0, 1]])
 
     transform = z_rot.dot(y_rot.dot(x_rot))
-    d = transform.dot(ac_diff)
+    # [3, 3] x [3, L]
+    d = transform.dot(np.transpose(ac_diff))
 
     # scaling of projection plane using fov
     fov_rad = np.deg2rad(fov)
@@ -215,7 +220,10 @@ def get_2D_from_3D(a, c, theta, fov, e):
     bx = e[2]*d[0]/(d[2]) + e[0]
     by = e[2]*d[1]/(d[2]) + e[1]
 
-    return (bx, by), d
+    # [L, 2]
+    points2d = np.stack([bx, by], axis=1)
+
+    return points2d
 
 
 
@@ -359,6 +367,7 @@ class SawyerXYZEnv(SawyerMocapBase, metaclass=abc.ABCMeta):
         self._prev_obs = self._get_curr_obs_combined_no_goal()
 
         self._traj = []
+        self._cnt = 0
 
     def _set_task_inner(self):
         # Doesn't absorb "extra" kwargs, to ensure nothing's missed.
@@ -393,8 +402,39 @@ class SawyerXYZEnv(SawyerMocapBase, metaclass=abc.ABCMeta):
         self.data.set_mocap_quat('mocap', np.array([1, 0, 1, 0]))
 
 
-    def get_traj(self):
-        return self._traj
+    def get_traj(self, interp=True):
+        traj = self._traj
+        # [L, 3]
+
+        if len(traj) == 0:
+            return []
+        elif len(traj) == 1:
+            # make it [1, 3]
+            return np.reshape(traj[0], (1, 3))
+
+        traj = np.stack(traj, axis=0)
+
+        if interp:
+            L = traj.shape[0]
+            time_index = np.linspace(0, 1, L)
+            interp_func = scipy.interpolate.interp1d(
+                    x=time_index, y=traj, axis=0)
+            traj_interp = interp_func(
+                np.linspace(time_index[0], time_index[-1], 10 * L))
+            return traj_interp
+        else:
+            return traj
+
+
+    def load_traj(self):
+        # load traj
+        folder_dir = "/data/metaworld_traj/"
+        traj_range = [0, 10]
+        traj_set = []
+        for i in range(traj_range[0], traj_range[1]):
+            traj = np.load(folder_dir + "traj_{}".format(self._cnt))
+            traj_set.append(traj)
+        return traj_set
 
     def get_position(self):
         pos_hand = self.get_endeff_pos()
@@ -419,18 +459,36 @@ class SawyerXYZEnv(SawyerMocapBase, metaclass=abc.ABCMeta):
         traj = self.get_traj()
 
 
+        print(traj)
+        # output_size = [img_height, img_width]
+        if len(traj) == 0:
+            return []
+        else:
+            cam_pos = np.reshape(cam_pos, (1, 3))
+            cam_2d_traj = global2cam(traj, cam_pos, cam_ori, img_width, img_height, fov=fov)
 
-        # debug code
-        # obj_pos = np.array([1., 2., 3.])
+        # for pt in traj:
+        #     cam_2d = global2cam(pt, cam_pos, cam_ori, img_width, img_height, fov=fov)
 
-        # traj = [np.array([-1., 0., 0.]), np.array([0., 0., 0.]), np.array([1., 0., 0.])]
-        # traj = [self._get_pos_goal()]
-        # # traj = [np.array([0.00776335, 0.84191945, 0.22130488])]
-        # traj = [np.array([1, 2, 3])]
-        # traj = [np.array([0.2, 0.25, 1.])]
-        # traj = [obj_pos]
+        #     # pt2d = self.project_point(pt, img_height=img_height, img_width=img_width, camera_name=camera_name)
+        #     cam_2d_traj.append(cam_2d)
+            return cam_2d_traj
 
-        # print(traj)
+
+
+    def project_traj_set_world_to_ego(self, fov=60, img_height=480, img_width=640, camera_name=""):
+        """Project 3d points from world coordinate into camera view coordinate
+        """
+        cam_pos = self.data.get_camera_xpos(camera_name)
+        print(self.data.get_camera_xmat(camera_name))
+        cam_ori = mat2euler(self.data.get_camera_xmat(camera_name))
+        # cam_ori = np.array([3.9, 2.3, 0.6])
+        # print('---ori')
+        # print(cam_ori)
+        # print(cam_pos)
+
+        # obj_pos = self.get_position()
+        traj_set = self.load_traj()
 
         # output_size = [img_height, img_width]
         cam_2d_traj = []
@@ -754,6 +812,12 @@ class SawyerXYZEnv(SawyerMocapBase, metaclass=abc.ABCMeta):
 
     def reset(self):
         self.curr_path_length = 0
+        # # save traj
+        # traj = self.get_traj()
+        # folder_dir = "/data/metaworld_traj/"
+        # np.save(folder_dir + "traj_{}".format(self._cnt), traj)
+        # self._cnt += 1
+
         self._traj = []
         return super().reset()
 

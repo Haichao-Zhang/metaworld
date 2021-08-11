@@ -14,6 +14,8 @@
   -->
 
       <camera pos="0 0.5 1.5" name="topview" />
+      <camera name="view1" fovy="60" mode="fixed" pos="1.3 -0.2 0.6" euler="4.3 2.1 0.3"/>
+      <camera name="view2" fovy="60" mode="fixed" pos="-1.1 -0.4 0.6" euler="1.19028995 -0.74832717  2.87586353"/>
       <camera name="corner" fovy="60" mode="fixed" pos="-1.1 -0.4 0.6" euler="1.19028995 -0.74832717  2.87586353"/>
       <camera name="corner2" fovy="60" mode="fixed" pos="1.3 -0.2 1.1" euler="3.9 2.3 0.6"/>
       <camera name="corner3" fovy="45" mode="fixed" pos="0.9 0 1.5" euler="3.5 2.7 1"/>
