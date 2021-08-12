@@ -10,6 +10,8 @@ import numpy as np
 from os import path
 import gym
 
+
+import scipy.interpolate
 from PIL import Image
 from matplotlib.pyplot import cm
 
@@ -64,6 +66,8 @@ class MujocoEnv(gym.Env, abc.ABC):
 
         self._did_see_sim_exception = False
 
+        self._im = None
+
         self.seed()
 
     def seed(self, seed=None):
@@ -88,6 +92,9 @@ class MujocoEnv(gym.Env, abc.ABC):
 
     @_assert_task_is_set
     def reset(self):
+
+        self._im = None
+
         self._did_see_sim_exception = False
         self.sim.reset()
         ob = self.reset_model()
@@ -176,8 +183,7 @@ class MujocoEnv(gym.Env, abc.ABC):
 
 
         def render_single_view_set(camera_name):
-            N = 160
-            colors = cm.rainbow(np.linspace(0, 1, N))
+
             data = self.sim.render(
                 width, height, mode='offscreen', camera_name=camera_name)
 
@@ -185,6 +191,7 @@ class MujocoEnv(gym.Env, abc.ABC):
 
 
             pt2d_traj_set = self.project_traj_set_world_to_ego(fov=FOV, img_height=height,img_width=width, camera_name=camera_name)
+
 
 
             # original image is upside-down, so flip it
@@ -195,8 +202,19 @@ class MujocoEnv(gym.Env, abc.ABC):
             alpha = 0.5
             for pt2d_traj in pt2d_traj_set:
                 if isinstance(pt2d_traj, np.ndarray):
-                    for i, color in zip(range(0, pt2d_traj.shape[0]), colors):
-                        pt2d = pt2d_traj[i]
+                    traj = pt2d_traj
+                    L = traj.shape[0]
+                    N = 10 * L
+                    if L <= 1:
+                        continue
+                    time_index = np.linspace(0, 1, L)
+                    interp_func = scipy.interpolate.interp1d(
+                            x=time_index, y=traj, axis=0)
+                    colors = cm.rainbow(np.linspace(0, 1, N))
+                    traj_interp = interp_func(
+                        np.linspace(time_index[0], time_index[-1], N))
+                    for i, color in zip(range(0, traj_interp.shape[0]), colors):
+                        pt2d = traj_interp[i]
                         py = width - int(pt2d[1])
                         px = height - int(pt2d[0])
                         # img[py:py+3, px:px+3, 1] = 250
@@ -221,8 +239,12 @@ class MujocoEnv(gym.Env, abc.ABC):
                     imgs.append(t_img)
                 img = np.concatenate(imgs, axis=1)
 
-                im = Image.fromarray(img)
-                im.save("image_{}_{}.png".format(self._traj_range[0], self._traj_range[0]))
+                # only save the first frame
+                if self._im is None:
+                    for i, img_i in enumerate(imgs):
+                        self._im = Image.fromarray(img_i)
+                        # self._im.save("image_{}_{}.png".format(self._traj_range[0], self._traj_range[1]))
+                        self._im.save("image_{}_{}_view{}.png".format(self._traj_range[0], self._traj_range[1], i))
 
 
             return img
