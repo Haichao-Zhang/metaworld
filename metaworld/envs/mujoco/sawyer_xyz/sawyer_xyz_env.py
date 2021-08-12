@@ -428,7 +428,14 @@ class SawyerXYZEnv(SawyerMocapBase, metaclass=abc.ABCMeta):
     def load_traj(self):
         # load traj
         folder_dir = "/data/metaworld_traj/"
+        traj_range = [1, 50]
+        traj_range = [51, 100]
         traj_range = [1, 100]
+        # traj_range = [101, 150]
+        traj_range = [200, 250]
+        self._traj_range = traj_range
+        # traj_range = [1000, 1050]
+        # traj_range = [1450, 1500]
         traj_set = []
         for i in range(traj_range[0], traj_range[1]):
             file_i = folder_dir + "traj_{}.npy".format(i)
@@ -817,12 +824,13 @@ class SawyerXYZEnv(SawyerMocapBase, metaclass=abc.ABCMeta):
         # # save traj
         traj = self.get_traj()
 
-        # # empty array
-        # if traj.size > 0:
-        #     folder_dir = "/data/metaworld_traj/"
-        #     np.save(folder_dir + "traj_{}".format(self._cnt), traj)
+        # empty array
+        if isinstance(traj, np.ndarray) and traj.size > 0:
+            # folder_dir = "/data/metaworld_traj/"
+            folder_dir = "/data/metaworld_traj_sac/"
+            np.save(folder_dir + "traj_{}".format(self._cnt), traj)
 
-        #     self._cnt += 1
+            self._cnt += 1
 
         self._traj = []
         return super().reset()

@@ -10,6 +10,10 @@ import numpy as np
 from os import path
 import gym
 
+from PIL import Image
+from matplotlib.pyplot import cm
+
+
 try:
     import mujoco_py
 except ImportError as e:
@@ -144,7 +148,10 @@ class MujocoEnv(gym.Env, abc.ABC):
 
         #     self._get_viewer(mode).render(width, height, camera_id=camera_id)
 
+
+
         def render_single_view(camera_name):
+            color = cm.rainbow(np.linspace(0, 1, 1000))
             data = self.sim.render(
                 width, height, mode='offscreen', camera_name=camera_name)
 
@@ -160,7 +167,7 @@ class MujocoEnv(gym.Env, abc.ABC):
             # px = width - int(pt2d[0])
             # py = int(pt2d[1])
             if isinstance(pt2d_traj, np.ndarray):
-                for i in range(0, pt2d_traj.shape[0]):
+                for i, color in zip(range(0, pt2d_traj.shape[0]), color):
                     pt2d = pt2d_traj[i]
                     py = width - int(pt2d[1])
                     px = height - int(pt2d[0])
@@ -169,11 +176,13 @@ class MujocoEnv(gym.Env, abc.ABC):
 
 
         def render_single_view_set(camera_name):
+            N = 160
+            colors = cm.rainbow(np.linspace(0, 1, N))
             data = self.sim.render(
                 width, height, mode='offscreen', camera_name=camera_name)
 
             FOV = self.sim.model.cam_fovy[self.sim.model.camera_name2id(camera_name)]
-            print(FOV)
+
 
             pt2d_traj_set = self.project_traj_set_world_to_ego(fov=FOV, img_height=height,img_width=width, camera_name=camera_name)
 
@@ -183,13 +192,16 @@ class MujocoEnv(gym.Env, abc.ABC):
             img = data
             # px = width - int(pt2d[0])
             # py = int(pt2d[1])
+            alpha = 0.5
             for pt2d_traj in pt2d_traj_set:
                 if isinstance(pt2d_traj, np.ndarray):
-                    for i in range(0, pt2d_traj.shape[0]):
+                    for i, color in zip(range(0, pt2d_traj.shape[0]), colors):
                         pt2d = pt2d_traj[i]
                         py = width - int(pt2d[1])
                         px = height - int(pt2d[0])
-                        img[py:py+3, px:px+3, 1] = 250
+                        # img[py:py+3, px:px+3, 1] = 250
+                        img[py, px, 0:3] = alpha * img[py, px, 0:3] + (1-alpha) * color[0:3] * 255
+
             return img
 
 
@@ -200,6 +212,7 @@ class MujocoEnv(gym.Env, abc.ABC):
             if isinstance(camera_name, str):
                 img = render_single_view(camera_name)
             elif isinstance(camera_name, list):
+                max_path_length = 1
                 imgs = []
                 for name in camera_name:
                     # t_img = render_single_view(name)
@@ -207,6 +220,10 @@ class MujocoEnv(gym.Env, abc.ABC):
 
                     imgs.append(t_img)
                 img = np.concatenate(imgs, axis=1)
+
+                im = Image.fromarray(img)
+                im.save("image_{}_{}.png".format(self._traj_range[0], self._traj_range[0]))
+
 
             return img
 
