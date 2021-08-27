@@ -442,6 +442,7 @@ class SawyerXYZEnv(SawyerMocapBase, metaclass=abc.ABCMeta):
         traj_range = [1001, 1050]
         traj_range = [1501, 1550]
         traj_range = [2001, 2050]
+        traj_range = [3001, 3050]
         self._traj_range = traj_range
         # traj_range = [1000, 1050]
         # traj_range = [1450, 1500]
